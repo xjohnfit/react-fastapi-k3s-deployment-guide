@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${APP_NAME}-backend
+  labels:
+    app: ${APP_NAME}-backend
+spec:
+  # Keep at 1 if the app calls SQLModel create_all() on startup: two pods
+  # starting together can race to create the same tables.
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: ${APP_NAME}-backend
+  template:
+    metadata:
+      labels:
+        app: ${APP_NAME}-backend
+    spec:
+      automountServiceAccountToken: false
+      containers:
+      - name: backend
+        image: ${DOCKERHUB_USERNAME}/${APP_NAME}-backend:${IMAGE_TAG}
+        imagePullPolicy: Always
+        ports:
+        - containerPort: ${BACKEND_PORT}
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: ${APP_NAME}-secrets
+              key: DATABASE_URL
+        - name: SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: ${APP_NAME}-secrets
+              key: SECRET_KEY
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1001
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        resources:
+          requests:
+            memory: "96Mi"
+            cpu: "15m"
+          limits:
+            memory: "256Mi"
+            cpu: "250m"
+        livenessProbe:
+          httpGet:
+            path: ${HEALTH_CHECK_PATH}
+            port: ${BACKEND_PORT}
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: ${HEALTH_CHECK_PATH}
+            port: ${BACKEND_PORT}
+          initialDelaySeconds: 5
+          periodSeconds: 5

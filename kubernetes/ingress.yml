@@ -1,0 +1,33 @@
+# Same domain: /api goes to FastAPI, everything else to the React app.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ${APP_NAME}-ingress
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: traefik
+  rules:
+  - host: ${DOMAIN}
+    http:
+      paths:
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: ${APP_NAME}-backend
+            port:
+              number: ${BACKEND_PORT}
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: ${APP_NAME}-frontend
+            port:
+              number: 80
+  tls:
+  - hosts:
+    - ${DOMAIN}
+    secretName: ${APP_NAME}-tls
