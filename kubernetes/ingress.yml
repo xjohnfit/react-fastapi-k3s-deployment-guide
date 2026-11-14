@@ -3,6 +3,7 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: ${APP_NAME}-ingress
+  namespace: ${K8S_NAMESPACE}
   annotations:
     traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
     traefik.ingress.kubernetes.io/router.tls: "true"
@@ -10,7 +11,7 @@ metadata:
     # <namespace>-<middleware name>@kubernetescrd. The annotation applies to both paths,
     # so a frontend URL starting with /api (e.g. /apiary) would also lose that prefix.
     # The app has no such routes; keep it that way, or split /api into its own Ingress.
-    traefik.ingress.kubernetes.io/router.middlewares: default-${APP_NAME}-strip-api@kubernetescrd
+    traefik.ingress.kubernetes.io/router.middlewares: ${K8S_NAMESPACE}-${APP_NAME}-strip-api@kubernetescrd
 spec:
   ingressClassName: traefik
   rules:
@@ -31,7 +32,28 @@ spec:
             name: ${APP_NAME}-frontend
             port:
               number: 80
+  # www.<domain> serves the same app (same routes as above), like the other apps
+  # on this cluster. Both names need DNS A records pointing at the server.
+  - host: www.${DOMAIN}
+    http:
+      paths:
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: ${APP_NAME}-backend
+            port:
+              number: ${BACKEND_PORT}
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: ${APP_NAME}-frontend
+            port:
+              number: 80
   tls:
+  # One certificate covering both names.
   - hosts:
     - ${DOMAIN}
+    - www.${DOMAIN}
     secretName: ${APP_NAME}-tls

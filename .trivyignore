@@ -3,3 +3,12 @@
 # Restrict container images to trusted registries: enforced by a cluster-wide
 # admission policy (e.g. Kyverno), not something a Deployment manifest can set.
 KSV-0125
+
+# Workloads in the default namespace: deliberate, all apps on the cluster live
+# there. Names are prefixed with APP_NAME, and every manifest sets its namespace
+# from K8S_NAMESPACE in deploy.yml, so moving later is a one-line change.
+KSV-0110
+
+# HelmChartConfig in kube-system (cluster/traefik-https-redirect.yaml): k3s only
+# reads a Traefik HelmChartConfig from kube-system, next to its bundled chart.
+KSV-0037

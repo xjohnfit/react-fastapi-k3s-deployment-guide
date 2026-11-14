@@ -197,13 +197,16 @@ jobs:
     environment: production
     env:
       APP_NAME: ${{ vars.APP_NAME }}
+      # Every namespaced manifest and the Ingress's middleware reference use this.
+      # default matches the other apps on the codewithxjohn cluster; change it here only.
+      K8S_NAMESPACE: default
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install kubectl
         uses: azure/setup-kubectl@bda439f5f36b99b262ebdcd3613869bddb064c8e # v5.2.0
         with:
-          version: 'v1.37.2' # within one minor version of your k3s server (kubectl version)
+          version: 'v1.34.13' # within one minor version of your k3s server (`kubectl version`); the codewithxjohn VPS runs v1.34.6 (2026-11)
 
       - name: Set up kubeconfig
         # The secret comes in as an env var, not ${{ }} inside the script, so its
@@ -214,6 +217,8 @@ jobs:
           mkdir -p "$HOME/.kube"
           printf '%s' "$KUBECONFIG_B64" | base64 -d > "$HOME/.kube/config"
           chmod 600 "$HOME/.kube/config"
+          # Later kubectl commands (secret, rollout, get) then act on the same namespace.
+          kubectl config set-context --current --namespace="$K8S_NAMESPACE"
 
       - name: Render Kubernetes manifests
         env:
@@ -225,11 +230,11 @@ jobs:
           LETSENCRYPT_EMAIL: ${{ vars.LETSENCRYPT_EMAIL }}
         run: |
           : "${APP_NAME:?Set the APP_NAME repository variable}"
+          : "${K8S_NAMESPACE:?Set K8S_NAMESPACE in the deploy job env}"
           : "${BACKEND_PORT:?Set the BACKEND_PORT repository variable}"
           [ "$BACKEND_PORT" = 8000 ] || { echo "::error::BACKEND_PORT must be 8000, the port uvicorn listens on in backend/Dockerfile"; exit 1; }
           : "${DOMAIN:?Set the DOMAIN repository variable}"
           : "${HEALTH_CHECK_PATH:?Set the HEALTH_CHECK_PATH repository variable}"
-          : "${LETSENCRYPT_EMAIL:?Set the LETSENCRYPT_EMAIL repository variable}"
           mkdir -p rendered
           for f in kubernetes/*.yml; do
             envsubst < "$f" > "rendered/$(basename "$f")"
@@ -246,11 +251,20 @@ jobs:
             --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Deploy to Kubernetes
+        env:
+          LETSENCRYPT_EMAIL: ${{ vars.LETSENCRYPT_EMAIL }}
         run: |
-          # Middleware first: if the cluster rejects it (e.g. Traefik v2 API group),
+          # ClusterIssuers are cluster-wide and shared with the other apps on this cluster:
+          # create them only if missing, never modify existing ones.
+          for env in staging prod; do
+            if ! kubectl get clusterissuer "letsencrypt-$env" >/dev/null 2>&1; then
+              # Only needed here, so the variable can stay unset on a cluster that has them.
+              : "${LETSENCRYPT_EMAIL:?letsencrypt-$env is missing: set the LETSENCRYPT_EMAIL repository variable}"
+              kubectl apply -f "rendered/cluster-issuer-$env.yml"
+            fi
+          done
+          # Middleware before the Deployments: if the cluster rejects it (e.g. Traefik v2 API group),
           # the job stops before any Deployment changes.
-          kubectl apply -f rendered/cluster-issuer-staging.yml
-          kubectl apply -f rendered/cluster-issuer-prod.yml
           kubectl apply -f rendered/middleware-strip-api.yml
           kubectl apply -f rendered/backend-service.yml
           kubectl apply -f rendered/frontend-service.yml
