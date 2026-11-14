@@ -1,0 +1,11 @@
+# Removes /api from the path before Traefik forwards a request to FastAPI.
+# The backend runs with --root-path /api, which expects the prefix to be gone.
+# Used by kubernetes/ingress.yml through its router.middlewares annotation.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: ${APP_NAME}-strip-api
+spec:
+  stripPrefix:
+    prefixes:
+    - /api
