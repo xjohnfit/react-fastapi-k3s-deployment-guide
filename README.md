@@ -9,6 +9,7 @@ Versions (2026-11): Python 3.14, Node 26 (LTS), nginx:alpine, kubectl 1.37, and 
 ## Layout
 
 ```text
+cluster/            one-time cluster settings (Traefik HTTP→HTTPS redirect)
 backend/            FastAPI app, requirements.txt, Dockerfile
 frontend/           Vite + React, Dockerfile, nginx.conf
 kubernetes/         manifests with ${VAR} placeholders
@@ -45,7 +46,7 @@ The `/api` prefix is stripped before the request reaches FastAPI, by a Traefik `
    rm ~/k3s-config.yaml
    ```
 
-3. Check cert-manager is running: `kubectl get pods -n cert-manager`.
+3. Check cert-manager is running: `kubectl get pods -n cert-manager`. Once per cluster, also make plain `http://` redirect to `https://` for every app: check `kubectl -n kube-system get helmchartconfig traefik` returns nothing (otherwise merge into it), then `kubectl apply -f cluster/traefik-https-redirect.yaml`. Without it, `http://` requests get a 404, because the Ingress routers are TLS-only.
 4. Add DNS A records for `DOMAIN`. The default ingress serves `DOMAIN` only; add a `www` rule to `kubernetes/ingress.yml` if you want it.
 5. In the GitHub repo, Settings, Secrets and variables, Actions.
 

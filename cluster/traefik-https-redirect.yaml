@@ -1,0 +1,31 @@
+# Redirect every http:// request to https:// (301), for all apps on the cluster.
+#
+# k3s installs Traefik with its bundled Helm chart; a HelmChartConfig named
+# "traefik" in kube-system adds values on top, and k3s re-runs the chart.
+# Applied once per cluster, not per app:
+#   kubectl apply -f cluster/traefik-https-redirect.yaml
+#
+# Checked against Traefik chart 39.0.5 (k3s v1.34). The chart turns
+# "to: websecure" into "--entryPoints.web.http.redirections.entryPoint.to=:443".
+# Older charts (before v34) used ports.web.redirectTo instead.
+#
+# Let's Encrypt HTTP-01 challenges still work: the validator follows a redirect
+# to https on port 443 and doesn't check the certificate there.
+#
+# If kube-system already has a HelmChartConfig named traefik, merge these
+# values into it instead of replacing it.
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    ports:
+      web:
+        http:
+          redirections:
+            entryPoint:
+              to: websecure
+              scheme: https
+              permanent: true
