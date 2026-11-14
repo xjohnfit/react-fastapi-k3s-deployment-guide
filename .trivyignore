@@ -1,0 +1,5 @@
+# Trivy findings accepted on purpose. Each needs a reason.
+
+# Restrict container images to trusted registries: enforced by a cluster-wide
+# admission policy (e.g. Kyverno), not something a Deployment manifest can set.
+KSV-0125

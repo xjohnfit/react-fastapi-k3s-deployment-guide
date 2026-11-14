@@ -10,9 +10,9 @@ RUN pip install --no-cache-dir --require-hashes --only-binary :all: -r requireme
 
 COPY app ./app
 
-# UID 1001 must match runAsUser in kubernetes/backend-deployment.yml
-RUN useradd --system --uid 1001 appuser
-USER 1001
+# UID/GID 10001 must match runAsUser/runAsGroup in kubernetes/backend-deployment.yml
+RUN groupadd --system --gid 10001 appuser && useradd --system --uid 10001 --gid 10001 appuser
+USER 10001:10001
 
 EXPOSE 8000
 

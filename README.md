@@ -33,7 +33,7 @@ The `/api` prefix is stripped before the request reaches FastAPI, by a Traefik `
 
 ## Setup steps
 
-1. Copy `backend/Dockerfile`, `backend/.dockerignore`, `frontend/Dockerfile`, `frontend/.dockerignore`, `frontend/nginx.conf`, `kubernetes/` and `.github/` (the workflow and `dependabot.yml`) into your project. If you add a manifest to `kubernetes/`, also add a `kubectl apply` line for it in the workflow's "Deploy to Kubernetes" step.
+1. Copy `backend/Dockerfile`, `backend/.dockerignore`, `frontend/Dockerfile`, `frontend/.dockerignore`, `frontend/nginx.conf`, `kubernetes/`, `.trivyignore` and `.github/` (the workflow and `dependabot.yml`) into your project. If you add a manifest to `kubernetes/`, also add a `kubectl apply` line for it in the workflow's "Deploy to Kubernetes" step.
 2. On the VPS, make the kubeconfig and base64 it:
 
    ```bash
@@ -72,6 +72,12 @@ These pass SonarCloud's security rules for workflows and Dockerfiles:
 - **`npm ci --ignore-scripts`:** package install scripts don't run, in CI or in the image build.
 - **Read-only site files:** nginx's config and `dist/` stay owned by root; the non-root nginx user can write only its cache and log directories.
 
+And Trivy's Kubernetes checks (`KSV-*`):
+
+- **Locked-down pods:** both run as UID/GID 10001 (the Dockerfiles' `USER 10001:10001` must match `runAsUser`/`runAsGroup`), with `readOnlyRootFilesystem: true`, seccomp `RuntimeDefault` and all capabilities dropped. The only writable paths are `emptyDir` volumes: `/tmp`, plus `/var/cache/nginx` for the frontend. If your app writes anywhere else, add an `emptyDir` for that path, or the pod crashes with a read-only filesystem error.
+- **`.trivyignore`** lists findings accepted on purpose, each with a reason. `KSV-0125` (trusted registries) needs a cluster admission policy, not a manifest change.
+- **Still open:** `KSV-0110`, workloads in the `default` namespace. Moving to a dedicated namespace touches every manifest, the middleware annotation (`<namespace>-<name>@kubernetescrd`) and the deploy commands.
+
 ## Neon notes
 
 Use the `-pooler` host in the `DATABASE_URL` the app runs with, plus `sslmode=require`. The app rewrites `postgresql://` to `postgresql+psycopg://` so SQLAlchemy picks psycopg 3. Run Alembic migrations with the direct (non-pooler) host from your own machine, not from the pod.
@@ -95,8 +101,12 @@ Build both images from your app, then run them behind a proxy that routes the wa
 docker build -t myapp-backend backend
 docker build -t myapp-frontend frontend
 docker network create app-test
-docker run -d --rm --name backend --network app-test -e SECRET_KEY=$(openssl rand -hex 32) -e DATABASE_URL=sqlite:////tmp/test.db myapp-backend
-docker run -d --rm --name frontend --network app-test myapp-frontend
+# The same limits the pods get in k3s: read-only image, UID 10001, no capabilities.
+# mode=1777 makes the scratch dirs writable like a k8s emptyDir (Docker's tmpfs is root-only by default).
+LIMITS=(--read-only --user 10001:10001 --cap-drop ALL --security-opt no-new-privileges)  # an array, so it works in bash and zsh
+TMP=size=64m,mode=1777
+docker run -d --rm --name backend --network app-test "${LIMITS[@]}" --tmpfs /tmp:$TMP -e SECRET_KEY=$(openssl rand -hex 32) -e DATABASE_URL=sqlite:////tmp/test.db myapp-backend
+docker run -d --rm --name frontend --network app-test "${LIMITS[@]}" --tmpfs /tmp:$TMP --tmpfs /var/cache/nginx:$TMP myapp-frontend
 docker run -d --rm --name proxy --network app-test -p 8080:8080 -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2-alpine
 curl localhost:8080/api/health       # backend through the proxy
 open http://localhost:8080           # the app, calling /api on the same origin

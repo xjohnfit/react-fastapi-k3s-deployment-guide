@@ -22,6 +22,15 @@ spec:
         app: ${APP_NAME}-backend
     spec:
       automountServiceAccountToken: false
+      # Pod-wide defaults: non-root user/group 10001 (matches the Dockerfile) and the
+      # container runtime's default seccomp profile (blocks unusual system calls).
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: backend
         image: ${DOCKERHUB_USERNAME}/${APP_NAME}-backend:${IMAGE_TAG}
@@ -41,11 +50,19 @@ spec:
               key: SECRET_KEY
         securityContext:
           runAsNonRoot: true
-          runAsUser: 1001
+          runAsUser: 10001
+          runAsGroup: 10001
           allowPrivilegeEscalation: false
+          # The image can't be modified at runtime; writable paths are the emptyDir volumes below.
+          readOnlyRootFilesystem: true
+          seccompProfile:
+            type: RuntimeDefault
           capabilities:
             drop:
             - ALL
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
         resources:
           requests:
             memory: "96Mi"
@@ -65,3 +82,7 @@ spec:
             port: ${BACKEND_PORT}
           initialDelaySeconds: 5
           periodSeconds: 5
+      volumes:
+      - name: tmp
+        emptyDir:
+          sizeLimit: 64Mi

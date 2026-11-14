@@ -20,6 +20,15 @@ spec:
         app: ${APP_NAME}-frontend
     spec:
       automountServiceAccountToken: false
+      # Pod-wide defaults: non-root user/group 10001 (matches the Dockerfile) and the
+      # container runtime's default seccomp profile (blocks unusual system calls).
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: frontend
         image: ${DOCKERHUB_USERNAME}/${APP_NAME}-frontend:${IMAGE_TAG}
@@ -28,11 +37,21 @@ spec:
         - containerPort: 5173
         securityContext:
           runAsNonRoot: true
-          runAsUser: 1001
+          runAsUser: 10001
+          runAsGroup: 10001
           allowPrivilegeEscalation: false
+          # The image can't be modified at runtime; writable paths are the emptyDir volumes below.
+          readOnlyRootFilesystem: true
+          seccompProfile:
+            type: RuntimeDefault
           capabilities:
             drop:
             - ALL
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: nginx-cache
+          mountPath: /var/cache/nginx
         resources:
           requests:
             memory: "32Mi"
@@ -52,3 +71,10 @@ spec:
             port: 5173
           initialDelaySeconds: 5
           periodSeconds: 5
+      volumes:
+      - name: tmp
+        emptyDir:
+          sizeLimit: 64Mi
+      - name: nginx-cache
+        emptyDir:
+          sizeLimit: 64Mi
