@@ -67,9 +67,12 @@ spec:
           requests:
             memory: "96Mi"
             cpu: "15m"
+            ephemeral-storage: "64Mi"
           limits:
             memory: "256Mi"
             cpu: "250m"
+            # Disk for logs and the emptyDir volumes, so a runaway write can't fill the node.
+            ephemeral-storage: "256Mi"
         livenessProbe:
           httpGet:
             path: ${HEALTH_CHECK_PATH}

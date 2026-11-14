@@ -12,9 +12,9 @@ RUN npm run build
 
 # Production stage (static SPA, no Node in the final image)
 FROM nginx:alpine
-RUN apk add --no-cache dumb-init
 # UID/GID 10001 must match runAsUser/runAsGroup in kubernetes/frontend-deployment.yml
-RUN addgroup -g 10001 -S nginx-app && adduser -S -u 10001 -G nginx-app nginx-app
+RUN apk add --no-cache dumb-init && \
+    addgroup -g 10001 -S nginx-app && adduser -S -u 10001 -G nginx-app nginx-app
 # Config and site files stay owned by root (read-only for nginx-app), so a
 # compromised nginx process can't rewrite the pages it serves.
 COPY nginx.conf /etc/nginx/nginx.conf
