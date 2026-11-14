@@ -2,7 +2,8 @@
 FROM node:26-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci
+# No package install scripts (the only one in the lock file, fsevents, is macOS-only).
+RUN npm ci --ignore-scripts
 COPY . .
 # Relative URL: the browser calls /api on whatever domain served the page.
 ARG VITE_API_URL=/api
@@ -13,10 +14,13 @@ RUN npm run build
 FROM nginx:alpine
 RUN apk add --no-cache dumb-init
 RUN addgroup -g 1001 -S nginx-app && adduser -S nginx-app -u 1001
-COPY --chown=nginx-app:nginx-app nginx.conf /etc/nginx/nginx.conf
-COPY --from=builder --chown=nginx-app:nginx-app /app/dist /usr/share/nginx/html
-RUN mkdir -p /var/cache/nginx /var/log/nginx /tmp && \
-    chown -R nginx-app:nginx-app /var/cache/nginx /var/log/nginx /tmp /usr/share/nginx/html
+# Config and site files stay owned by root (read-only for nginx-app), so a
+# compromised nginx process can't rewrite the pages it serves.
+COPY nginx.conf /etc/nginx/nginx.conf
+COPY --from=builder /app/dist /usr/share/nginx/html
+# nginx-app only needs write access to its cache and log directories.
+RUN mkdir -p /var/cache/nginx /var/log/nginx && \
+    chown -R nginx-app:nginx-app /var/cache/nginx /var/log/nginx
 USER nginx-app
 EXPOSE 5173
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \

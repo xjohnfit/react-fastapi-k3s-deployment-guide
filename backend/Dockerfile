@@ -1,12 +1,12 @@
-FROM python:3.15-slim
+FROM python:3.14-slim
 
 WORKDIR /app
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 
+# requirements.txt is the runtime lock file (test tools live in requirements-dev.txt).
+# Every package is pinned with a hash and installed from a wheel, so no setup.py runs.
 COPY requirements.txt .
-# pytest is a dev dependency, so it stays out of the image.
-RUN grep -v '^pytest' requirements.txt > runtime.txt \
-    && pip install --no-cache-dir -r runtime.txt
+RUN pip install --no-cache-dir --require-hashes --only-binary :all: -r requirements.txt
 
 COPY app ./app
 

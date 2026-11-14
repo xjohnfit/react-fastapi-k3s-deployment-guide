@@ -4,7 +4,7 @@ A starting point for deploying a React (Vite) frontend and a FastAPI backend to 
 
 Status: the images and the `/api` routing have been tested locally (see [Test locally](#test-locally)), but nothing here has run against a real cluster yet. Expect to fix things on the first deploy.
 
-Versions (2026-11): Python 3.15, Node 26 (LTS), nginx:alpine, kubectl 1.37, and the current major of every GitHub Action. On Python 3.15, PyYAML (pulled in by `uvicorn[standard]`) has no prebuilt wheel yet and installs as pure Python. That's harmless; uvicorn only uses it for YAML log configs. If a package your app needs has no 3.15 support, drop the Dockerfile and `test-backend` to `3.14` together.
+Versions (2026-11): Python 3.14, Node 26 (LTS), nginx:alpine, kubectl 1.37, and the latest release of every GitHub Action, pinned by commit SHA. Python 3.15 is out, but the image installs wheels only (see [Supply-chain hardening](#supply-chain-hardening)) and PyYAML, which `uvicorn[standard]` pulls in, has no 3.15 wheel yet. Check before moving the Dockerfile and `test-backend` to a newer Python together: `docker run --rm -v "$PWD/backend/requirements.txt:/r.txt:ro" python:3.15-slim pip install --require-hashes --only-binary :all: -r /r.txt`.
 
 ## Layout
 
@@ -23,7 +23,9 @@ The `/api` prefix is stripped before the request reaches FastAPI, by a Traefik `
 
 ## What your app must provide
 
-- `backend/requirements.txt` with `pytest` in it (the Dockerfile drops it from the image)
+- `backend/requirements.txt`: a lock file of the runtime dependencies, every package pinned with `--hash` (the Docker image installs it)
+- `backend/requirements-dev.txt`: the same plus `pytest` (CI installs it). Generate both from `.in` files with `uv pip compile --universal --python-version 3.14 --generate-hashes`, or `pip-compile --generate-hashes`
+- a frontend that builds without npm install scripts (`npm ci --ignore-scripts`)
 - `GET /health` on the backend
 - `DATABASE_URL` and `SECRET_KEY` read from environment variables
 - frontend scripts named `lint`, `typecheck` and `build`
@@ -31,7 +33,7 @@ The `/api` prefix is stripped before the request reaches FastAPI, by a Traefik `
 
 ## Setup steps
 
-1. Copy `backend/Dockerfile`, `backend/.dockerignore`, `frontend/Dockerfile`, `frontend/.dockerignore`, `frontend/nginx.conf`, `kubernetes/` and `.github/` into your project. If you add a manifest to `kubernetes/`, also add a `kubectl apply` line for it in the workflow's "Deploy to Kubernetes" step.
+1. Copy `backend/Dockerfile`, `backend/.dockerignore`, `frontend/Dockerfile`, `frontend/.dockerignore`, `frontend/nginx.conf`, `kubernetes/` and `.github/` (the workflow and `dependabot.yml`) into your project. If you add a manifest to `kubernetes/`, also add a `kubectl apply` line for it in the workflow's "Deploy to Kubernetes" step.
 2. On the VPS, make the kubeconfig and base64 it:
 
    ```bash
@@ -59,6 +61,16 @@ The `/api` prefix is stripped before the request reaches FastAPI, by a Traefik `
 
    An empty array means the gate did not save.
 7. Push to `main`. The jobs run in this order: test-backend and test-frontend, trivy-fs-scan, build-and-push, scan-images, deploy.
+
+## Supply-chain hardening
+
+These pass SonarCloud's security rules for workflows and Dockerfiles:
+
+- **Actions pinned to commit SHAs**, with the version in a comment (`uses: actions/checkout@<sha> # v7.0.1`). A tag can be moved to different code; a SHA can't. `.github/dependabot.yml` opens monthly PRs to bump the pins, the Docker base images and npm packages.
+- **Secrets enter scripts through `env:`**, never as `${{ secrets.X }}` inside `run:`, so a secret's contents are never pasted into shell code.
+- **Locked, wheel-only Python installs:** `pip install --require-hashes --only-binary :all:` installs only the exact files in the lock file and never runs a package's `setup.py`.
+- **`npm ci --ignore-scripts`:** package install scripts don't run, in CI or in the image build.
+- **Read-only site files:** nginx's config and `dist/` stay owned by root; the non-root nginx user can write only its cache and log directories.
 
 ## Neon notes
 
@@ -101,4 +113,4 @@ docker rm -f proxy frontend backend && docker network rm app-test
 
 ## Background
 
-The pipeline rules (single `KUBECONFIG` secret name, no `paths-ignore` on manifests, secrets applied with `--dry-run=client -o yaml | kubectl apply -f -`, pinned actions, image scan, environment approval) come from `mern-k3s-deployment-guide/docs/pipeline-design.md`.
+The pipeline rules (single `KUBECONFIG` secret name, no `paths-ignore` on manifests, secrets applied with `--dry-run=client -o yaml | kubectl apply -f -`, SHA-pinned actions, image scan, environment approval) come from `mern-k3s-deployment-guide/docs/pipeline-design.md`.
