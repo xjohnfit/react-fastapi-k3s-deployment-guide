@@ -116,7 +116,9 @@ jobs:
 
       - name: Compute image tag
         id: image-tag
-        run: echo "IMAGE_TAG=main-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+        # Run ID and attempt make every run's tag unique, so a rerun on the same commit
+        # still changes the Pod template and Kubernetes rolls out the new images.
+        run: echo "IMAGE_TAG=main-$(git rev-parse --short HEAD)-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
 
       - name: Extract metadata for backend
         id: meta-backend
@@ -224,6 +226,7 @@ jobs:
         run: |
           : "${APP_NAME:?Set the APP_NAME repository variable}"
           : "${BACKEND_PORT:?Set the BACKEND_PORT repository variable}"
+          [ "$BACKEND_PORT" = 8000 ] || { echo "::error::BACKEND_PORT must be 8000, the port uvicorn listens on in backend/Dockerfile"; exit 1; }
           : "${DOMAIN:?Set the DOMAIN repository variable}"
           : "${HEALTH_CHECK_PATH:?Set the HEALTH_CHECK_PATH repository variable}"
           : "${LETSENCRYPT_EMAIL:?Set the LETSENCRYPT_EMAIL repository variable}"
@@ -244,19 +247,31 @@ jobs:
 
       - name: Deploy to Kubernetes
         run: |
+          # Middleware first: if the cluster rejects it (e.g. Traefik v2 API group),
+          # the job stops before any Deployment changes.
           kubectl apply -f rendered/cluster-issuer-staging.yml
           kubectl apply -f rendered/cluster-issuer-prod.yml
-          kubectl apply -f rendered/backend-deployment.yml
-          kubectl apply -f rendered/backend-service.yml
-          kubectl apply -f rendered/frontend-deployment.yml
-          kubectl apply -f rendered/frontend-service.yml
           kubectl apply -f rendered/middleware-strip-api.yml
+          kubectl apply -f rendered/backend-service.yml
+          kubectl apply -f rendered/frontend-service.yml
+          kubectl apply -f rendered/backend-deployment.yml
+          kubectl apply -f rendered/frontend-deployment.yml
           kubectl apply -f rendered/ingress.yml
 
       - name: Wait for rollout, roll back automatically on failure
         run: |
-          kubectl rollout status "deployment/$APP_NAME-backend" --timeout=5m || { kubectl rollout undo "deployment/$APP_NAME-backend"; exit 1; }
-          kubectl rollout status "deployment/$APP_NAME-frontend" --timeout=5m || { kubectl rollout undo "deployment/$APP_NAME-frontend"; exit 1; }
+          # Check both Deployments, roll back each one that failed, then fail the job.
+          failed=0
+          for part in backend frontend; do
+            deploy="deployment/$APP_NAME-$part"
+            if ! kubectl rollout status "$deploy" --timeout=5m; then
+              echo "::error::$deploy did not roll out; rolling back"
+              failed=1
+              { kubectl rollout undo "$deploy" && kubectl rollout status "$deploy" --timeout=5m; } \
+                || echo "::error::rollback of $deploy did not finish (no previous revision on a first deploy)"
+            fi
+          done
+          exit "$failed"
 
       - name: Verify deployment
         run: |

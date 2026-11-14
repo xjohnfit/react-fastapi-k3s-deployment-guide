@@ -6,8 +6,10 @@ COPY package*.json ./
 RUN npm ci --ignore-scripts
 COPY . .
 # Relative URL: the browser calls /api on whatever domain served the page.
+# An unset repo variable arrives as an empty build arg, which would override a plain
+# ARG default; :-/api also covers the empty case.
 ARG VITE_API_URL=/api
-ENV VITE_API_URL=$VITE_API_URL
+ENV VITE_API_URL=${VITE_API_URL:-/api}
 RUN npm run build
 
 # Production stage (static SPA, no Node in the final image)

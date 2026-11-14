@@ -105,11 +105,19 @@ docker network create app-test
 # mode=1777 makes the scratch dirs writable like a k8s emptyDir (Docker's tmpfs is root-only by default).
 LIMITS=(--read-only --user 10001:10001 --cap-drop ALL --security-opt no-new-privileges)  # an array, so it works in bash and zsh
 TMP=size=64m,mode=1777
+# SQLite keeps the test self-contained if your app supports it (TripLedger does).
+# If yours needs Postgres, run a postgres container on app-test and point DATABASE_URL at it.
 docker run -d --rm --name backend --network app-test "${LIMITS[@]}" --tmpfs /tmp:$TMP -e SECRET_KEY=$(openssl rand -hex 32) -e DATABASE_URL=sqlite:////tmp/test.db myapp-backend
 docker run -d --rm --name frontend --network app-test "${LIMITS[@]}" --tmpfs /tmp:$TMP --tmpfs /var/cache/nginx:$TMP myapp-frontend
 docker run -d --rm --name proxy --network app-test -p 8080:8080 -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2-alpine
-curl localhost:8080/api/health       # backend through the proxy
+# Wait until the backend answers through the proxy (gives up after 60 s).
+for i in $(seq 1 60); do curl -sf localhost:8080/api/health && break; sleep 1; done
 open http://localhost:8080           # the app, calling /api on the same origin
+```
+
+When you're done testing in the browser, clean up:
+
+```bash
 docker rm -f proxy frontend backend && docker network rm app-test
 ```
 
