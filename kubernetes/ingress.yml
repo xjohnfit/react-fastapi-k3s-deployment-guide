@@ -7,6 +7,9 @@ metadata:
     traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
     traefik.ingress.kubernetes.io/router.tls: "true"
     cert-manager.io/cluster-issuer: letsencrypt-prod
+    # <namespace>-<middleware name>@kubernetescrd. It applies to both paths, but only
+    # /api requests start with /api, so the frontend path is unaffected.
+    traefik.ingress.kubernetes.io/router.middlewares: default-${APP_NAME}-strip-api@kubernetescrd
 spec:
   ingressClassName: traefik
   rules:

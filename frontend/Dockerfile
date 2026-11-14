@@ -1,5 +1,5 @@
 # Build stage
-FROM node:22-alpine AS builder
+FROM node:26-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci
@@ -20,6 +20,6 @@ RUN mkdir -p /var/cache/nginx /var/log/nginx /tmp && \
 USER nginx-app
 EXPOSE 5173
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD wget --quiet --tries=1 --spider http://localhost:5173/ || exit 1
+    CMD wget --quiet --tries=1 --spider http://127.0.0.1:5173/ || exit 1
 ENTRYPOINT ["dumb-init", "--"]
 CMD ["nginx", "-g", "daemon off;"]
